@@ -1,22 +1,26 @@
 {
   "sources": [
     {
-      "name": "xoilacz",
-      "group": "Xoi Lac",
-      "home": "https://xoilaczdh.tv/",
-      "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
+      "name": "giovang",
+      "group": "Giờ Vàng TV",
+      "home": "https://giovang.gold/",
+      "extra_pages": ["https://giovang.gold/lich-thi-dau/"]
     },
     {
-      "name": "giovang",
-      "group": "Gio Vang",
-      "home": "https://giovang.gold/",
-      "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
+      "name": "xoilac",
+      "group": "Xôi Lạc TV",
+      "home": "https://xoilaczdh.tv/",
+      "extra_pages": ["https://xoilaczdh.tv/lich-thi-dau/"]
     }
   ],
   "max_matches_per_source": 60,
+  "max_servers": 4,
+  "wait_ms": 6000,
+  "concurrency": 5,
+  "min_static_links": 3,
   "hide_after_hours": 3,
   "keep_history_hours": 24,
-  "check_stream_alive": true,
+  "check_stream_alive": false,
   "output_m3u": "playlist.m3u",
   "output_json": "matches.json"
 }
