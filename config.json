@@ -13,10 +13,12 @@
       "extra_pages": ["https://xoilaczdh.tv/lich-thi-dau/"]
     }
   ],
-  "max_matches_per_source": 60,
-  "max_servers": 4,
-  "wait_ms": 6000,
-  "concurrency": 5,
+  "max_matches_per_source": 30,
+  "max_servers": 2,
+  "wait_ms": 4000,
+  "concurrency": 4,
+  "match_timeout": 45,
+  "total_timeout": 720,
   "min_static_links": 3,
   "hide_after_hours": 3,
   "keep_history_hours": 24,

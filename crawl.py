@@ -8,8 +8,8 @@ Không có Playwright thì tự lùi về đọc HTML tĩnh (kém hơn).
 Chạy:        python crawl.py
 Thử 1 trận:  python crawl.py --test https://trang/truc-tiep/abc/
 """
-import asyncio, base64, html as htmllib, json, re, sys
-from datetime import datetime, timedelta, timezone
+import asyncio, base64, html as htmllib, json, re, sys, time
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 import requests
 
@@ -145,18 +145,24 @@ def static_match(src, url):
 
 
 # ---------- chế độ trình duyệt ----------
+PLAY_JS = """() => {
+  document.querySelectorAll('video').forEach(v => { v.muted = true; v.play().catch(() => {}); });
+  for (const sel of ['.vjs-big-play-button', '.jw-icon-display', '[class*=play-btn]', '[class*=btn-play]']) {
+    const e = document.querySelector(sel); if (e) e.click();
+  }
+}"""
+
+
 async def click_play(page):
-    for sel in ("video", ".vjs-big-play-button", ".jw-icon-display",
-                "[class*='play-btn']", "[class*='btn-play']"):
-        for f in page.frames:
-            try:
-                await f.click(sel, timeout=400, force=True)
-            except Exception:
-                pass
+    for f in page.frames[:8]:
+        try:
+            await asyncio.wait_for(f.evaluate(PLAY_JS), 2)
+        except Exception:
+            pass
 
 
 async def route_filter(route):
-    if route.request.resource_type in ("image", "font", "stylesheet"):
+    if route.request.resource_type in ("image", "font", "media"):
         await route.abort()
     else:
         await route.continue_()
@@ -173,7 +179,7 @@ async def browser_match(ctx, src, url, cfg):
     page.on("request", on_req)
     html = ""
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(cfg["wait_ms"])
         html = await page.content()
         await click_play(page)
@@ -184,7 +190,7 @@ async def browser_match(ctx, src, url, cfg):
             if s.rstrip("/") == url.rstrip("/"):
                 continue
             try:
-                await page.goto(s, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(s, wait_until="domcontentloaded", timeout=20000)
                 await page.wait_for_timeout(cfg["wait_ms"] // 2)
                 await click_play(page)
                 await page.wait_for_timeout(2500)
@@ -193,7 +199,7 @@ async def browser_match(ctx, src, url, cfg):
         # nút server dạng button (đặt server_selector trong config nếu cần)
         sel = src.get("server_selector")
         if sel:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             await page.wait_for_timeout(cfg["wait_ms"] // 2)
             n = await page.locator(sel).count()
             for i in range(min(n, cfg["max_servers"])):
@@ -203,7 +209,10 @@ async def browser_match(ctx, src, url, cfg):
                 except Exception:
                     pass
     finally:
-        await page.close()
+        try:
+            await asyncio.wait_for(page.close(), 5)
+        except Exception:
+            pass
     for u in find_streams(html, url, depth=0):  # link nằm sẵn trong HTML
         found.setdefault(u, url)
     return html, [{"url": u, "referer": r} for u, r in found.items()]
@@ -221,7 +230,7 @@ async def discover(ctx, src, cfg):
         if ctx and (len(cand) < cfg["min_static_links"] or src.get("render_home")):
             page = await ctx.new_page()
             try:
-                await page.goto(pg, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(pg, wait_until="domcontentloaded", timeout=20000)
                 await page.wait_for_timeout(4000)
                 for _ in range(4):
                     await page.mouse.wheel(0, 3000)
@@ -251,27 +260,57 @@ async def alive(url, referer):
     return await asyncio.to_thread(_chk)
 
 
+DEADLINE = [float("inf")]
+
+
+def url_date(u):
+    m = re.search(r"ngay-(\d{1,2})-(\d{1,2})", u) or \
+        re.search(r"-(\d{1,2})-(\d{1,2})(?:-[0-9a-f]{6,}|/|$)", u)
+    if not m:
+        return None
+    try:
+        return date(datetime.now(VN).year, int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def too_old(u):
+    d = url_date(u)
+    return bool(d and d < datetime.now(VN).date() - timedelta(days=1))
+
+
+async def _do_match(ctx, src, url, cfg):
+    try:
+        if ctx:
+            html, streams = await browser_match(ctx, src, url, cfg)
+        else:
+            html, streams = await asyncio.to_thread(static_match, src, url)
+    except Exception as e:
+        print(f"  [lỗi] {url}: {e}", file=sys.stderr, flush=True)
+        return None
+    info = page_info(html)
+    if cfg.get("check_stream_alive"):
+        ok = await asyncio.gather(*[alive(s["url"], s["referer"]) for s in streams])
+        streams = [s for s, k in zip(streams, ok) if k]
+    if not streams:
+        print(f"  [không có m3u8] {info['title'] or url}", flush=True)
+        return None
+    print(f"  [ok] {info['title']}: {len(streams)} luồng", flush=True)
+    return {"id": url, "source": src["name"], "group": src.get("group", src["name"]),
+            "title": info["title"], "logo": info["logo"], "start": info["start"],
+            "streams": streams, "last_seen": datetime.now(VN).isoformat()}
+
+
 async def do_match(ctx, sem, src, url, cfg):
     async with sem:
+        if time.monotonic() > DEADLINE[0]:
+            print(f"  [bỏ qua, hết thời gian chung] {url}", flush=True)
+            return None
         try:
-            if ctx:
-                html, streams = await browser_match(ctx, src, url, cfg)
-            else:
-                html, streams = await asyncio.to_thread(static_match, src, url)
-        except Exception as e:
-            print(f"  [lỗi] {url}: {e}", file=sys.stderr)
+            return await asyncio.wait_for(_do_match(ctx, src, url, cfg), cfg["match_timeout"])
+        except asyncio.TimeoutError:
+            print(f"  [quá {cfg['match_timeout']}s] {url}", flush=True)
             return None
-        info = page_info(html)
-        if cfg.get("check_stream_alive"):
-            ok = await asyncio.gather(*[alive(s["url"], s["referer"]) for s in streams])
-            streams = [s for s, k in zip(streams, ok) if k]
-        if not streams:
-            print(f"  [không có m3u8] {info['title'] or url}")
-            return None
-        print(f"  [ok] {info['title']}: {len(streams)} luồng")
-        return {"id": url, "source": src["name"], "group": src.get("group", src["name"]),
-                "title": info["title"], "logo": info["logo"], "start": info["start"],
-                "streams": streams, "last_seen": datetime.now(VN).isoformat()}
 
 
 # ---------- xuất file ----------
@@ -296,13 +335,14 @@ async def amain(cfg, test_url=None):
     pw = br = ctx = None
     if async_playwright:
         pw = await async_playwright().start()
-        br = await pw.chromium.launch(args=["--no-sandbox", "--autoplay-policy=no-user-gesture-required"])
+        br = await pw.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage", "--autoplay-policy=no-user-gesture-required"])
         ctx = await br.new_context(user_agent=UA, locale="vi-VN", timezone_id="Asia/Ho_Chi_Minh",
                                    viewport={"width": 1280, "height": 720}, ignore_https_errors=True)
         await ctx.route("**/*", route_filter)
     else:
         print("!! Chưa cài Playwright -> chỉ đọc HTML tĩnh, nhiều trang sẽ không ra link", file=sys.stderr)
     sem = asyncio.Semaphore(cfg["concurrency"])
+    DEADLINE[0] = time.monotonic() + cfg["total_timeout"]
     try:
         if test_url:
             src = {"name": "test", "home": test_url}
@@ -322,6 +362,8 @@ async def amain(cfg, test_url=None):
             except Exception as e:
                 print(f"  [nguồn lỗi] {e}", file=sys.stderr)
                 continue
+            links = [u for u in links if not too_old(u)]
+            print(f"  -> crawl {len(links)} trận (đã bỏ trận quá cũ)", flush=True)
             res = await asyncio.gather(*[do_match(ctx, sem, src, u, cfg) for u in links])
             for r in res:
                 if r:
@@ -344,6 +386,7 @@ async def amain(cfg, test_url=None):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
     cfg = json.load(open("config.json", encoding="utf8"))
     test = sys.argv[sys.argv.index("--test") + 1] if "--test" in sys.argv else None
     asyncio.run(amain(cfg, test))
