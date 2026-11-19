@@ -2,8 +2,14 @@
   "sources": [
     {
       "name": "xoilacz",
-      "group": "Xôi Lạc",
+      "group": "Xoi Lac",
       "home": "https://xoilaczdh.tv/",
+      "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
+    },
+    {
+      "name": "giovang",
+      "group": "Gio Vang",
+      "home": "https://giovang.gold/",
       "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
     }
   ],
