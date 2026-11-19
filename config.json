@@ -1,9 +1,9 @@
 {
   "sources": [
     {
-      "name": "colatv98",
-      "group": "Cola TV",
-      "home": "https://colatv98.live/",
+      "name": "xoilacz",
+      "group": "Xôi Lạc",
+      "home": "https://xoilaczdh.tv/",
       "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
     }
   ],
