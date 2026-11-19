@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "name": "colatv98",
+      "group": "Cola TV",
+      "home": "https://colatv98.live/",
+      "match_link_regex": "/truc-tiep/[^\"'#?\\s<>]+"
+    }
+  ],
+  "max_matches_per_source": 60,
+  "hide_after_hours": 3,
+  "keep_history_hours": 24,
+  "check_stream_alive": true,
+  "output_m3u": "playlist.m3u",
+  "output_json": "matches.json"
+}
